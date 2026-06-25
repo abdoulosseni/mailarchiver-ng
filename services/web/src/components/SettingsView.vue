@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getAppSettings, updateAppSettings, getStats, getHealth, getThroughput, getDlq, replayDlq, purgeDlq } from '../api.js'
+import { t } from '../i18n.js'
 
 const emit = defineEmits(['expired'])
 
@@ -20,17 +21,17 @@ async function loadHealth() {
   }
 }
 async function doReplayDlq() {
-  if (!confirm('Re-injecter tous les mails en quarantaine dans l’archivage ?')) return
+  if (!confirm(t('settings.confirmReplay'))) return
   try {
     const r = await replayDlq()
-    alert(`${r.replayed} mail(s) ré-injecté(s).`)
+    alert(t('settings.replayed', { n: r.replayed }))
     await loadHealth()
   } catch (e) {
     error.value = e.message
   }
 }
 async function doPurgeDlq() {
-  if (!confirm('Vider définitivement la file de quarantaine (mails perdus) ?')) return
+  if (!confirm(t('settings.confirmPurge'))) return
   try {
     await purgeDlq()
     await loadHealth()

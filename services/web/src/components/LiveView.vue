@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getToken, getMessage } from '../api.js'
+import { t } from '../i18n.js'
 import MessageModal from './MessageModal.vue'
 
 const emit = defineEmits(['expired'])
@@ -43,16 +44,16 @@ onUnmounted(() => es && es.close())
 <template>
   <section class="card">
     <h2>
-      Mails en temps réel
+      {{ t('live.title') }}
       <span :class="connected ? 'ok' : 'muted'" style="font-size: 13px; font-weight: 400">
-        {{ connected ? '● connecté' : '○ connexion…' }}
+        {{ connected ? t('live.connected') : t('live.connecting') }}
       </span>
     </h2>
-    <p class="muted">Les nouveaux mails archivés s'affichent ici automatiquement, sans rafraîchir.</p>
+    <p class="muted">{{ t('live.subtitle') }}</p>
 
     <table v-if="live.length">
       <thead>
-        <tr><th>Reçu</th><th>De</th><th>À</th><th>Sujet</th><th>PJ</th><th></th></tr>
+        <tr><th>{{ t('live.thReceived') }}</th><th>{{ t('live.thFrom') }}</th><th>{{ t('live.thTo') }}</th><th>{{ t('live.thSubject') }}</th><th>{{ t('live.thAtt') }}</th><th></th></tr>
       </thead>
       <tbody>
         <tr v-for="m in live" :key="m.id">
@@ -61,11 +62,11 @@ onUnmounted(() => es && es.close())
           <td>{{ (m.to_addrs || []).join(', ') }}</td>
           <td>{{ m.subject }}</td>
           <td><span v-if="m.has_attachment" class="pill">{{ (m.attachment_names || []).length }}</span></td>
-          <td><button class="link" @click="openMessage(m)">Consulter</button></td>
+          <td><button class="link" @click="openMessage(m)">{{ t('common.view') }}</button></td>
         </tr>
       </tbody>
     </table>
-    <p v-else class="muted" style="margin-top: 16px">En attente de nouveaux mails…</p>
+    <p v-else class="muted" style="margin-top: 16px">{{ t('live.waiting') }}</p>
   </section>
 
   <MessageModal v-if="selected" :message="selected" @close="selected = null" />

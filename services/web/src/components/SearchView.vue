@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { searchAdvanced, fetchEml, getMessage } from '../api.js'
+import { t } from '../i18n.js'
 import MessageModal from './MessageModal.vue'
 
 const emit = defineEmits(['expired'])
@@ -39,7 +40,7 @@ async function run() {
 }
 
 async function load() {
-  info.value = 'Recherche…'
+  info.value = t('search.searching')
   results.value = []
   try {
     const data = await searchAdvanced(cleanFilters(), cursors.value[pageIndex.value], pageSize)
@@ -55,16 +56,16 @@ async function load() {
       cursors.value.push(data.nextSearchAfter)
     }
     if (total.value === 0) {
-      info.value = 'Aucun résultat'
+      info.value = t('search.noResults')
     } else {
       const start = pageIndex.value * pageSize + 1
       const end = pageIndex.value * pageSize + results.value.length
       const tot = total.value + (totalEstimated.value ? '+' : '')
-      info.value = `${tot} résultat(s) — affichage ${start}–${end}`
+      info.value = t('search.resultsInfo', { tot, start, end })
     }
   } catch (e) {
     if (e.message === 'unauthorized') emit('expired')
-    else info.value = 'Erreur lors de la recherche'
+    else info.value = t('search.error')
   }
 }
 
@@ -98,7 +99,7 @@ async function exportEml(m) {
   try {
     const { blob, integrity } = await fetchEml(m.id)
     if (integrity && integrity !== 'valid') {
-      alert('⚠️ Signature INVALIDE — archive potentiellement altérée !')
+      alert(t('message.sigInvalidAlert'))
     }
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -121,23 +122,23 @@ onMounted(run)
 
 <template>
   <section class="card">
-    <h2>Recherche avancée</h2>
+    <h2>{{ t('search.title') }}</h2>
     <div class="filters">
-      <div><label>Texte (sujet / corps)</label><input v-model="filters.text" @keyup.enter="run" /></div>
-      <div><label>Expéditeur</label><input v-model="filters.from_" placeholder="alice@corp.com" @keyup.enter="run" /></div>
-      <div><label>Destinataire</label><input v-model="filters.to" @keyup.enter="run" /></div>
-      <div><label>Expéditeur ou destinataire</label><input v-model="filters.participant" placeholder="alice@corp.com" @keyup.enter="run" /></div>
-      <div><label>Sujet exact</label><input v-model="filters.subject" @keyup.enter="run" /></div>
-      <div><label>Date début</label><input v-model="filters.date_from" type="date" /></div>
-      <div><label>Date fin</label><input v-model="filters.date_to" type="date" /></div>
+      <div><label>{{ t('search.fText') }}</label><input v-model="filters.text" @keyup.enter="run" /></div>
+      <div><label>{{ t('search.fFrom') }}</label><input v-model="filters.from_" placeholder="alice@corp.com" @keyup.enter="run" /></div>
+      <div><label>{{ t('search.fTo') }}</label><input v-model="filters.to" @keyup.enter="run" /></div>
+      <div><label>{{ t('search.fParticipant') }}</label><input v-model="filters.participant" placeholder="alice@corp.com" @keyup.enter="run" /></div>
+      <div><label>{{ t('search.fSubject') }}</label><input v-model="filters.subject" @keyup.enter="run" /></div>
+      <div><label>{{ t('search.fDateFrom') }}</label><input v-model="filters.date_from" type="date" /></div>
+      <div><label>{{ t('search.fDateTo') }}</label><input v-model="filters.date_to" type="date" /></div>
     </div>
-    <div style="margin-top: 14px"><button @click="run">Rechercher</button></div>
+    <div style="margin-top: 14px"><button @click="run">{{ t('search.search') }}</button></div>
 
     <p class="muted" style="margin-top: 14px">{{ info }}</p>
 
     <table v-if="results.length">
       <thead>
-        <tr><th>Date du mail</th><th>Archivé le</th><th>De</th><th>À</th><th>Sujet</th><th>PJ</th><th></th></tr>
+        <tr><th>{{ t('search.thDate') }}</th><th>{{ t('search.thArchived') }}</th><th>{{ t('search.thFrom') }}</th><th>{{ t('search.thTo') }}</th><th>{{ t('search.thSubject') }}</th><th>{{ t('search.thAtt') }}</th><th></th></tr>
       </thead>
       <tbody>
         <tr v-for="m in results" :key="m.id">
@@ -148,17 +149,17 @@ onMounted(run)
           <td>{{ m.subject }}</td>
           <td><span v-if="m.has_attachment" class="pill">{{ (m.attachment_names || []).length }}</span></td>
           <td>
-            <button class="link" @click="openMessage(m)">Consulter</button>
-            <button class="link sep" @click="exportEml(m)">Télécharger EML</button>
+            <button class="link" @click="openMessage(m)">{{ t('common.view') }}</button>
+            <button class="link sep" @click="exportEml(m)">{{ t('common.downloadEml') }}</button>
           </td>
         </tr>
       </tbody>
     </table>
 
     <div v-if="pageIndex > 0 || hasNext()" class="pager">
-      <button class="ghost" :disabled="pageIndex === 0" @click="prevPage">← Précédent</button>
-      <span class="muted">Page {{ pageIndex + 1 }}</span>
-      <button class="ghost" :disabled="!hasNext()" @click="nextPage">Suivant →</button>
+      <button class="ghost" :disabled="pageIndex === 0" @click="prevPage">{{ t('search.prev') }}</button>
+      <span class="muted">{{ t('search.page', { n: pageIndex + 1 }) }}</span>
+      <button class="ghost" :disabled="!hasNext()" @click="nextPage">{{ t('search.next') }}</button>
     </div>
   </section>
 

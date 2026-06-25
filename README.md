@@ -1,13 +1,5 @@
 # MailArchiver-NG
 
-> ⚠️ **Statut : MVP fonctionnel — PAS prêt pour la production en l'état.**
-> Projet validé de bout en bout (suite de non-régression **49/49**, test de charge)
-> mais **non durci pour un usage réel** : compte `admin/admin` et secrets par
-> défaut à changer, HA fournie en artefacts **non déployés**, pas d'audit de
-> sécurité ni de soak-test. **Ne pas exploiter tel quel** pour de l'archivage à
-> valeur légale sans une phase de durcissement (cf. [docs/PRODUCTION.md](docs/PRODUCTION.md)).
-> Fourni « EN L'ÉTAT », sans garantie (licence MIT).
-
 Plateforme d'archivage d'e-mails — architecture **microservices** en **Python**.
 
 Reçoit les mails par SMTP (journaling depuis un MTA), les archive de façon

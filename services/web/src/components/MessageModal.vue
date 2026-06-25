@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { fetchEml, setLegalHold, isAdmin } from '../api.js'
+import { t } from '../i18n.js'
 
 const props = defineProps({ message: { type: Object, required: true } })
 defineEmits(['close'])
@@ -20,7 +21,7 @@ async function exportEml() {
   try {
     const { blob, integrity } = await fetchEml(props.message.id)
     if (integrity && integrity !== 'valid') {
-      alert('⚠️ Signature INVALIDE — archive potentiellement altérée !')
+      alert(t('message.sigInvalidAlert'))
     }
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -37,32 +38,32 @@ async function exportEml() {
   <div class="overlay" @click.self="$emit('close')">
     <div class="modal card">
       <div class="modal-head">
-        <h2>{{ message.subject || '(sans sujet)' }}</h2>
-        <button class="ghost" @click="$emit('close')">Fermer</button>
+        <h2>{{ message.subject || t('message.noSubject') }}</h2>
+        <button class="ghost" @click="$emit('close')">{{ t('common.close') }}</button>
       </div>
       <div class="meta">
-        <div><span class="muted">De :</span> {{ message.from }}</div>
-        <div><span class="muted">À :</span> {{ (message.to || []).join(', ') }}</div>
-        <div v-if="message.cc && message.cc.length"><span class="muted">Cc :</span> {{ message.cc.join(', ') }}</div>
-        <div><span class="muted">Date du mail :</span> {{ message.date }}</div>
-        <div v-if="message.archived_at"><span class="muted">Archivé le :</span> {{ message.archived_at }}</div>
+        <div><span class="muted">{{ t('message.from') }}</span> {{ message.from }}</div>
+        <div><span class="muted">{{ t('message.to') }}</span> {{ (message.to || []).join(', ') }}</div>
+        <div v-if="message.cc && message.cc.length"><span class="muted">{{ t('message.cc') }}</span> {{ message.cc.join(', ') }}</div>
+        <div><span class="muted">{{ t('message.date') }}</span> {{ message.date }}</div>
+        <div v-if="message.archived_at"><span class="muted">{{ t('message.archivedAt') }}</span> {{ message.archived_at }}</div>
         <div>
-          <span class="muted">Intégrité :</span>
+          <span class="muted">{{ t('message.integrity') }}</span>
           <span :class="message.integrity_ok ? 'ok' : 'err'">
-            {{ message.integrity_ok ? 'signature valide ✓' : 'signature INVALIDE ✗' }}
+            {{ message.integrity_ok ? t('message.sigValid') : t('message.sigInvalid') }}
           </span>
         </div>
       </div>
 
       <div v-if="message.attachments && message.attachments.length" class="attachments">
-        <span class="muted">Pièces jointes :</span>
+        <span class="muted">{{ t('message.attachments') }}</span>
         <span v-for="(a, i) in message.attachments" :key="i" class="pill att">
-          {{ a.filename }} ({{ Math.round(a.size / 1024) }} Ko)
+          {{ a.filename }} ({{ Math.round(a.size / 1024) }} {{ t('message.kb') }})
         </span>
       </div>
 
       <details v-if="message.headers && message.headers.length" class="headers">
-        <summary>Toutes les en-têtes ({{ message.headers.length }})</summary>
+        <summary>{{ t('message.allHeaders', { n: message.headers.length }) }}</summary>
         <table class="hdr-table">
           <tbody>
             <tr v-for="(h, i) in message.headers" :key="i">
@@ -73,17 +74,17 @@ async function exportEml() {
         </table>
       </details>
 
-      <pre class="body">{{ message.body || '(corps vide)' }}</pre>
+      <pre class="body">{{ message.body || t('message.emptyBody') }}</pre>
       <p v-if="message.has_html" class="muted">
-        Ce mail contient une version HTML ; le corps texte est affiché. Téléchargez le .eml pour la version d'origine.
+        {{ t('message.htmlNote') }}
       </p>
 
       <div class="modal-actions">
-        <button @click="exportEml">Télécharger EML</button>
+        <button @click="exportEml">{{ t('common.downloadEml') }}</button>
         <button v-if="admin" class="ghost" @click="toggleHold">
-          {{ held ? '🔒 Lever la conservation légale' : 'Mettre en conservation légale' }}
+          {{ held ? t('message.liftHold') : t('message.setHold') }}
         </button>
-        <span v-if="held" class="hold">⚖️ Conservation légale active (exclu de la purge)</span>
+        <span v-if="held" class="hold">{{ t('message.holdActive') }}</span>
       </div>
     </div>
   </div>

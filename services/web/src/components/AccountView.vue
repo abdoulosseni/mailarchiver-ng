@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { changeOwnPassword } from '../api.js'
+import { t } from '../i18n.js'
 
 const emit = defineEmits(['expired'])
 
@@ -14,16 +15,16 @@ async function submit() {
   error.value = ''
   message.value = ''
   if (!newPassword.value) {
-    error.value = 'Nouveau mot de passe requis'
+    error.value = t('account.errNewRequired')
     return
   }
   if (newPassword.value !== confirm.value) {
-    error.value = 'La confirmation ne correspond pas'
+    error.value = t('account.errMismatch')
     return
   }
   try {
     await changeOwnPassword(oldPassword.value, newPassword.value)
-    message.value = 'Mot de passe modifié.'
+    message.value = t('account.ok')
     oldPassword.value = newPassword.value = confirm.value = ''
   } catch (e) {
     if (e.message === 'unauthorized') emit('expired')
@@ -34,14 +35,14 @@ async function submit() {
 
 <template>
   <section class="card" style="max-width: 420px">
-    <h2>Mon mot de passe</h2>
-    <label>Mot de passe actuel</label>
+    <h2>{{ t('account.title') }}</h2>
+    <label>{{ t('account.current') }}</label>
     <input v-model="oldPassword" type="password" autocomplete="current-password" />
-    <label>Nouveau mot de passe</label>
+    <label>{{ t('account.new') }}</label>
     <input v-model="newPassword" type="password" autocomplete="new-password" />
-    <label>Confirmer le nouveau mot de passe</label>
+    <label>{{ t('account.confirm') }}</label>
     <input v-model="confirm" type="password" autocomplete="new-password" @keyup.enter="submit" />
-    <div style="margin-top: 16px"><button @click="submit">Modifier</button></div>
+    <div style="margin-top: 16px"><button @click="submit">{{ t('account.submit') }}</button></div>
     <p v-if="error" class="err">{{ error }}</p>
     <p v-if="message" class="muted">{{ message }}</p>
   </section>

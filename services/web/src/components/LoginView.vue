@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { login, setSession } from '../api.js'
+import { t } from '../i18n.js'
 
 const emit = defineEmits(['logged-in'])
 
@@ -26,13 +27,13 @@ async function submit() {
 
 <template>
   <section class="card">
-    <h2>Connexion</h2>
-    <label>Identifiant</label>
+    <h2>{{ t('login.title') }}</h2>
+    <label>{{ t('login.username') }}</label>
     <input v-model="username" autocomplete="username" />
-    <label>Mot de passe</label>
+    <label>{{ t('login.password') }}</label>
     <input v-model="password" type="password" autocomplete="current-password" @keyup.enter="submit" />
     <div style="margin-top: 16px">
-      <button :disabled="loading" @click="submit">{{ loading ? '…' : 'Se connecter' }}</button>
+      <button :disabled="loading" @click="submit">{{ loading ? t('login.loading') : t('login.submit') }}</button>
     </div>
     <p v-if="error" class="err">{{ error }}</p>
   </section>
