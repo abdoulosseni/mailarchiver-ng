@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getAppSettings, updateAppSettings, getStats, getHealth, getThroughput, getDlq, replayDlq, purgeDlq } from '../api.js'
-import { t } from '../i18n.js'
+import { t, locale } from '../i18n.js'
 
 const emit = defineEmits(['expired'])
 
@@ -43,8 +43,8 @@ const retentionDays = ref(365)
 const smtpd = ref({ host: '0.0.0.0', port: 2525, require_starttls: false, max_message_bytes: 52428800 })
 
 function fmtBytes(n) {
-  if (!n) return '0 o'
-  const u = ['o', 'Ko', 'Mo', 'Go', 'To']
+  const u = locale.value === 'en' ? ['B', 'KB', 'MB', 'GB', 'TB'] : ['o', 'Ko', 'Mo', 'Go', 'To']
+  if (!n) return '0 ' + u[0]
   let i = 0
   let v = n
   while (v >= 1024 && i < u.length - 1) {
@@ -54,7 +54,7 @@ function fmtBytes(n) {
   return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${u[i]}`
 }
 function fmtNum(n) {
-  return (n ?? 0).toLocaleString('fr-FR')
+  return (n ?? 0).toLocaleString(locale.value === 'en' ? 'en-US' : 'fr-FR')
 }
 function fmtDate(d) {
   return (d || '').slice(0, 16).replace('T', ' ') || '—'
@@ -80,7 +80,7 @@ async function load() {
 }
 
 async function saveRetention() {
-  await save({ retention_days: Number(retentionDays.value) }, 'Conservation enregistrée.')
+  await save({ retention_days: Number(retentionDays.value) }, t('settings.retentionSaved'))
 }
 async function saveSmtpd() {
   await save(
@@ -90,7 +90,7 @@ async function saveSmtpd() {
       smtpd_require_starttls: smtpd.value.require_starttls,
       smtpd_max_message_bytes: Number(smtpd.value.max_message_bytes),
     },
-    'Serveur SMTPD enregistré (redémarrer le service smtp-gateway pour appliquer).',
+    t('settings.smtpdSaved'),
   )
 }
 async function saveSmtp() {
@@ -102,7 +102,7 @@ async function saveSmtp() {
     smtp_from: smtp.value.from,
   }
   if (smtpPassword.value) payload.smtp_password = smtpPassword.value
-  await save(payload, 'Relais SMTP enregistré.')
+  await save(payload, t('settings.smtpSaved'))
 }
 
 async function save(payload, ok) {
@@ -135,74 +135,67 @@ onUnmounted(() => {
   <div class="layout">
   <div class="col-left">
   <section v-if="stats" class="card" style="max-width: 560px; margin-bottom: 14px">
-    <h2>Statistiques d'archivage</h2>
+    <h2>{{ t('settings.statsTitle') }}</h2>
     <div class="stats">
-      <div class="stat"><span class="num">{{ fmtNum(stats.messages.count) }}</span><span class="lbl">mails archivés</span></div>
-      <div class="stat"><span class="num">{{ fmtBytes(stats.messages.total_size_bytes) }}</span><span class="lbl">volume des mails</span></div>
-      <div class="stat"><span class="num">{{ fmtNum(stats.attachments.stored) }}</span><span class="lbl">PJ stockées (dédup.)</span></div>
-      <div class="stat"><span class="num">{{ fmtNum(stats.attachments.references) }}</span><span class="lbl">références de PJ</span></div>
-      <div class="stat"><span class="num">{{ fmtBytes(stats.attachments.stored_size_bytes) }}</span><span class="lbl">PJ stockées</span></div>
-      <div class="stat"><span class="num">{{ fmtBytes(stats.attachments.dedup_saved_bytes) }}</span><span class="lbl">économisé par dédup.</span></div>
-      <div class="stat"><span class="num">{{ fmtNum(stats.indexed) }}</span><span class="lbl">indexés (recherche)</span></div>
-      <div class="stat"><span class="num">{{ fmtNum(stats.accounts) }}</span><span class="lbl">comptes</span></div>
-      <div class="stat"><span class="num">{{ fmtNum(stats.fetch_sources) }}</span><span class="lbl">sources IMAP/POP</span></div>
+      <div class="stat"><span class="num">{{ fmtNum(stats.messages.count) }}</span><span class="lbl">{{ t('settings.statArchived') }}</span></div>
+      <div class="stat"><span class="num">{{ fmtBytes(stats.messages.total_size_bytes) }}</span><span class="lbl">{{ t('settings.statVolume') }}</span></div>
+      <div class="stat"><span class="num">{{ fmtNum(stats.attachments.stored) }}</span><span class="lbl">{{ t('settings.statDedup') }}</span></div>
+      <div class="stat"><span class="num">{{ fmtNum(stats.attachments.references) }}</span><span class="lbl">{{ t('settings.statRefs') }}</span></div>
+      <div class="stat"><span class="num">{{ fmtBytes(stats.attachments.stored_size_bytes) }}</span><span class="lbl">{{ t('settings.statStored') }}</span></div>
+      <div class="stat"><span class="num">{{ fmtBytes(stats.attachments.dedup_saved_bytes) }}</span><span class="lbl">{{ t('settings.statSaved') }}</span></div>
+      <div class="stat"><span class="num">{{ fmtNum(stats.indexed) }}</span><span class="lbl">{{ t('settings.statIndexed') }}</span></div>
+      <div class="stat"><span class="num">{{ fmtNum(stats.accounts) }}</span><span class="lbl">{{ t('settings.statAccounts') }}</span></div>
+      <div class="stat"><span class="num">{{ fmtNum(stats.fetch_sources) }}</span><span class="lbl">{{ t('settings.statSources') }}</span></div>
     </div>
     <p class="muted" style="margin-top: 10px">
-      Période des mails : {{ fmtDate(stats.messages.date_oldest) }} → {{ fmtDate(stats.messages.date_newest) }} ·
-      Archivés du {{ fmtDate(stats.messages.archived_oldest) }} au {{ fmtDate(stats.messages.archived_newest) }}
+      {{ t('settings.period', { a: fmtDate(stats.messages.date_oldest), b: fmtDate(stats.messages.date_newest), c: fmtDate(stats.messages.archived_oldest), d: fmtDate(stats.messages.archived_newest) }) }}
     </p>
   </section>
 
   <section class="card" style="max-width: 560px; margin-bottom: 14px">
-    <h2>Politique de conservation des mails</h2>
-    <label>Durée de conservation (en jours)</label>
+    <h2>{{ t('settings.retentionTitle') }}</h2>
+    <label>{{ t('settings.retentionLabel') }}</label>
     <input v-model="retentionDays" type="number" min="0" />
-    <p class="muted">
-      Mails archivés depuis plus de cette durée = purgés automatiquement.
-      Défaut : <strong>365 jours (1 an)</strong>. <code>0</code> = illimité.
-    </p>
-    <div style="margin-top: 10px"><button @click="saveRetention">Enregistrer la conservation</button></div>
+    <p class="muted" v-html="t('settings.retentionHelp')"></p>
+    <div style="margin-top: 10px"><button @click="saveRetention">{{ t('settings.retentionSave') }}</button></div>
     <p v-if="error" class="err">{{ error }}</p>
     <p v-if="message" class="muted">{{ message }}</p>
   </section>
 
   <section class="card" style="max-width: 560px; margin-bottom: 14px">
-    <h2>Serveur SMTP entrant (SMTPD)</h2>
-    <p class="muted">Passerelle qui reçoit les mails à archiver (journaling). Voir l'onglet <em>Sources</em> pour la configuration côté MTA.</p>
+    <h2>{{ t('settings.smtpdTitle') }}</h2>
+    <p class="muted" v-html="t('settings.smtpdIntro')"></p>
     <div class="filters">
-      <div><label>Adresse de bind (IP)</label><input v-model="smtpd.host" placeholder="0.0.0.0" /></div>
-      <div><label>Port</label><input v-model="smtpd.port" type="number" /></div>
-      <div><label>Taille max. par mail (octets)</label><input v-model="smtpd.max_message_bytes" type="number" /></div>
+      <div><label>{{ t('settings.smtpdBind') }}</label><input v-model="smtpd.host" placeholder="0.0.0.0" /></div>
+      <div><label>{{ t('common.port') }}</label><input v-model="smtpd.port" type="number" /></div>
+      <div><label>{{ t('settings.smtpdMaxSize') }}</label><input v-model="smtpd.max_message_bytes" type="number" /></div>
       <div>
-        <label>Options</label>
-        <label class="opt"><input type="checkbox" v-model="smtpd.require_starttls" /> Exiger STARTTLS</label>
+        <label>{{ t('common.options') }}</label>
+        <label class="opt"><input type="checkbox" v-model="smtpd.require_starttls" /> {{ t('settings.requireStarttls') }}</label>
       </div>
     </div>
-    <div style="margin-top: 10px"><button @click="saveSmtpd">Enregistrer le SMTPD</button></div>
-    <p class="muted" style="margin-top: 8px">
-      ⚠ Prend effet au <strong>redémarrage du service smtp-gateway</strong> (un socket d'écoute ne se reconfigure pas à chaud).
-      En déploiement Docker, le <strong>port publié</strong> doit correspondre (mapping <code>docker-compose</code>).
-    </p>
+    <div style="margin-top: 10px"><button @click="saveSmtpd">{{ t('settings.smtpdSave') }}</button></div>
+    <p class="muted" style="margin-top: 8px" v-html="t('settings.smtpdNote')"></p>
   </section>
 
   <section class="card" style="max-width: 560px">
-    <h2>Relais SMTP (transfert vers les auditeurs)</h2>
-    <p class="muted">Utilisé pour transférer les mails du périmètre vers l'adresse d'un auditeur (page Comptes).</p>
+    <h2>{{ t('settings.smtpTitle') }}</h2>
+    <p class="muted">{{ t('settings.smtpIntro') }}</p>
     <div class="filters">
-      <div><label>Serveur</label><input v-model="smtp.host" placeholder="smtp.example.com" /></div>
-      <div><label>Port</label><input v-model="smtp.port" type="number" /></div>
-      <div><label>Identifiant (optionnel)</label><input v-model="smtp.username" /></div>
+      <div><label>{{ t('common.server') }}</label><input v-model="smtp.host" placeholder="smtp.example.com" /></div>
+      <div><label>{{ t('common.port') }}</label><input v-model="smtp.port" type="number" /></div>
+      <div><label>{{ t('settings.smtpUsername') }}</label><input v-model="smtp.username" /></div>
       <div>
-        <label>Mot de passe {{ smtp.password_set ? '(défini — laisser vide pour conserver)' : '' }}</label>
+        <label>{{ t('common.password') }} {{ smtp.password_set ? t('settings.smtpPasswordSet') : '' }}</label>
         <input v-model="smtpPassword" type="password" />
       </div>
-      <div><label>Adresse d'expédition (From)</label><input v-model="smtp.from" placeholder="archiver@example.com" /></div>
+      <div><label>{{ t('settings.smtpFrom') }}</label><input v-model="smtp.from" placeholder="archiver@example.com" /></div>
       <div>
-        <label>Options</label>
-        <label class="opt"><input type="checkbox" v-model="smtp.starttls" /> STARTTLS</label>
+        <label>{{ t('common.options') }}</label>
+        <label class="opt"><input type="checkbox" v-model="smtp.starttls" /> {{ t('common.starttls') }}</label>
       </div>
     </div>
-    <div style="margin-top: 10px"><button @click="saveSmtp">Enregistrer le relais SMTP</button></div>
+    <div style="margin-top: 10px"><button @click="saveSmtp">{{ t('settings.smtpSave') }}</button></div>
 
     <p v-if="error" class="err">{{ error }}</p>
     <p v-if="message" class="muted">{{ message }}</p>
@@ -212,54 +205,54 @@ onUnmounted(() => {
   <aside class="col-right">
     <section class="card">
       <h2 style="display:flex; align-items:center; justify-content:space-between">
-        État du système
+        {{ t('settings.systemTitle') }}
         <button class="link" @click="loadHealth">↻</button>
       </h2>
       <div v-if="health">
         <div class="hc-overall" :class="health.status">
-          {{ health.status === 'ok' ? 'Tous les composants opérationnels' : 'Dégradé' }}
+          {{ health.status === 'ok' ? t('settings.systemAllOk') : t('settings.systemDegraded') }}
         </div>
         <ul class="hc-list">
           <li v-for="c in health.components" :key="c.name">
             <span class="dot" :class="c.status"></span>
             <span class="hc-name">{{ c.label }}</span>
-            <span class="hc-meta">{{ c.status === 'ok' ? c.latency_ms + ' ms' : (c.detail || 'indisponible') }}</span>
+            <span class="hc-meta">{{ c.status === 'ok' ? c.latency_ms + ' ms' : (c.detail || t('settings.systemUnavailable')) }}</span>
           </li>
         </ul>
-        <p class="muted" style="margin-top:8px">Actualisé automatiquement toutes les 10 s.</p>
+        <p class="muted" style="margin-top:8px">{{ t('settings.systemAutoRefresh') }}</p>
       </div>
-      <p v-else class="muted">Vérification…</p>
+      <p v-else class="muted">{{ t('settings.systemChecking') }}</p>
     </section>
 
     <section class="card" style="margin-top: 14px">
-      <h2>Débit (temps réel)</h2>
+      <h2>{{ t('settings.throughputTitle') }}</h2>
       <div v-if="throughput && throughput.available">
         <div class="rate">
           <span class="rate-val">{{ throughput.injection_rate }}</span>
-          <span class="rate-lbl">injection (msg/s)</span>
+          <span class="rate-lbl">{{ t('settings.throughputInjection') }}</span>
         </div>
         <div class="rate">
           <span class="rate-val">{{ throughput.processing_rate }}</span>
-          <span class="rate-lbl">traitement / archivage (msg/s)</span>
+          <span class="rate-lbl">{{ t('settings.throughputProcessing') }}</span>
         </div>
         <ul class="hc-list" style="margin-top: 6px">
-          <li><span class="hc-name">En file (backlog)</span><span class="hc-meta">{{ throughput.backlog }}</span></li>
-          <li><span class="hc-name">Workers connectés</span><span class="hc-meta">{{ throughput.consumers }}</span></li>
-          <li><span class="hc-name">En quarantaine (DLQ)</span><span class="hc-meta">{{ throughput.dead_letter }}</span></li>
+          <li><span class="hc-name">{{ t('settings.throughputBacklog') }}</span><span class="hc-meta">{{ throughput.backlog }}</span></li>
+          <li><span class="hc-name">{{ t('settings.throughputWorkers') }}</span><span class="hc-meta">{{ throughput.consumers }}</span></li>
+          <li><span class="hc-name">{{ t('settings.throughputDlq') }}</span><span class="hc-meta">{{ throughput.dead_letter }}</span></li>
         </ul>
         <ul class="notes">
-          <li><strong>Quarantaine (DLQ, <em>Dead Letter Queue</em>)</strong> : mails dont le traitement a échoué après plusieurs tentatives. Ils y sont mis de côté (jamais perdus) pour inspection/rejeu, au lieu de boucler indéfiniment. Une valeur &gt; 0 signale un incident à examiner.</li>
+          <li v-html="t('settings.throughputNote')"></li>
         </ul>
-        <p class="muted" style="margin-top:8px">Taux moyennés par RabbitMQ ; actualisé toutes les 10 s.</p>
+        <p class="muted" style="margin-top:8px">{{ t('settings.throughputAvg') }}</p>
       </div>
-      <p v-else class="muted">Métriques indisponibles.</p>
+      <p v-else class="muted">{{ t('settings.throughputUnavailable') }}</p>
     </section>
 
     <section v-if="dlq" class="card" style="margin-top: 14px">
-      <h2>Quarantaine (DLQ)</h2>
-      <p class="muted" v-if="!dlq.count">Aucun mail en quarantaine ✓</p>
+      <h2>{{ t('settings.dlqTitle') }}</h2>
+      <p class="muted" v-if="!dlq.count">{{ t('settings.dlqEmpty') }}</p>
       <div v-else>
-        <p><strong>{{ dlq.count }}</strong> mail(s) en quarantaine.</p>
+        <p v-html="t('settings.dlqCount', { n: dlq.count })"></p>
         <ul class="hc-list">
           <li v-for="(m, i) in dlq.preview" :key="i" style="display:block">
             <span class="hc-name">{{ m.subject }}</span>
@@ -267,8 +260,8 @@ onUnmounted(() => {
           </li>
         </ul>
         <div style="margin-top: 10px; display:flex; gap:10px">
-          <button @click="doReplayDlq">Rejouer</button>
-          <button class="ghost" @click="doPurgeDlq">Vider</button>
+          <button @click="doReplayDlq">{{ t('settings.dlqReplay') }}</button>
+          <button class="ghost" @click="doPurgeDlq">{{ t('settings.dlqPurge') }}</button>
         </div>
       </div>
     </section>

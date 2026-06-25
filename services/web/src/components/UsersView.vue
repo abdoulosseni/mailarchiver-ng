@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { listUsers, createUser, deleteUser, changePassword, setUserActive, setAuditedEmails, setUserEmail, transferPerimeter, listTransferJobs, setRestoreImap } from '../api.js'
+import { t } from '../i18n.js'
 
 const emit = defineEmits(['expired'])
 
@@ -45,7 +46,7 @@ async function saveImap() {
 }
 async function restoreViaImap() {
   if (!imapForm.value.host) {
-    error.value = 'Renseignez le serveur IMAP.'
+    error.value = t('users.errImapServerRequired')
     return
   }
   try {
@@ -53,7 +54,7 @@ async function restoreViaImap() {
     const u = imapEditUser.value
     imapEditUser.value = null
     await refresh()
-    await launchRestore(u, 'imap', `la boîte IMAP ${imapForm.value.host}/${imapForm.value.folder} (APPEND)`)
+    await launchRestore(u, 'imap')
   } catch (e) {
     if (e.message === 'unauthorized') emit('expired')
     else error.value = e.message
@@ -115,13 +116,13 @@ function cancelEditPassword() {
 }
 async function savePassword(u) {
   if (!newPassword.value) {
-    error.value = 'Mot de passe requis'
+    error.value = t('users.errPwdRequired')
     return
   }
   try {
     await changePassword(u.id, newPassword.value)
     cancelEditPassword()
-    alert(`Mot de passe modifié pour « ${u.username} »`)
+    alert(t('users.pwdChanged', { name: u.username }))
   } catch (e) {
     if (e.message === 'unauthorized') emit('expired')
     else error.value = e.message
@@ -175,17 +176,17 @@ async function saveScope(u) {
 
 async function doTransferSmtp(u) {
   if (!u.email) {
-    error.value = 'Ce compte n’a pas d’adresse e-mail.'
+    error.value = t('users.errNoEmail')
     return
   }
-  if (!confirm(`Restorer tous les mails du périmètre vers « ${u.email} » via SMTP ?`)) return
-  await launchRestore(u, 'smtp', `« ${u.email} » via SMTP`)
+  if (!confirm(t('users.confirmTransferSmtp', { email: u.email }))) return
+  await launchRestore(u, 'smtp')
 }
-async function launchRestore(u, restoreMethod, label) {
+async function launchRestore(u, restoreMethod) {
   error.value = ''
   try {
     const r = await transferPerimeter(u.id, restoreMethod)
-    alert(`Restoration lancée en arrière-plan : ${r.total} mail(s) vers ${r.recipient} (job #${r.job_id}).`)
+    alert(t('users.restoreLaunched', { total: r.total, recipient: r.recipient, job: r.job_id }))
     await refreshJobs()
   } catch (e) {
     if (e.message === 'unauthorized') emit('expired')
@@ -211,7 +212,7 @@ async function toggleActive(u) {
 }
 
 async function remove(u) {
-  if (!confirm(`Supprimer le compte « ${u.username} » ?`)) return
+  if (!confirm(t('users.confirmDeleteUser', { name: u.username }))) return
   error.value = ''
   try {
     await deleteUser(u.id)
@@ -223,7 +224,7 @@ async function remove(u) {
 }
 
 function roleLabel(role) {
-  return { admin: 'Administrateur', auditor: 'Auditeur', user: 'Utilisateur' }[role] || role
+  return { admin: t('users.roleAdmin'), auditor: t('users.roleAuditor'), user: t('users.roleUser') }[role] || role
 }
 
 onMounted(() => {
@@ -234,37 +235,37 @@ onMounted(() => {
 
 <template>
   <section class="card">
-    <h2>Comptes locaux</h2>
+    <h2>{{ t('users.title') }}</h2>
 
     <!-- Création d'un compte -->
     <div class="filters">
-      <div><label>Identifiant</label><input v-model="form.username" /></div>
+      <div><label>{{ t('users.fUsername') }}</label><input v-model="form.username" /></div>
       <div>
-        <label>{{ form.role === 'auditor' ? 'E-mail de l\'auditeur (son adresse, requis)' : 'E-mail (mails accessibles à l\'utilisateur)' }}</label>
+        <label>{{ form.role === 'auditor' ? t('users.fEmailAuditor') : t('users.fEmailUser') }}</label>
         <input v-model="form.email" type="email" placeholder="alice@corp.com" />
       </div>
-      <div><label>Nom affiché (optionnel)</label><input v-model="form.display_name" /></div>
-      <div><label>Mot de passe</label><input v-model="form.password" type="password" /></div>
+      <div><label>{{ t('users.fDisplayName') }}</label><input v-model="form.display_name" /></div>
+      <div><label>{{ t('users.fPassword') }}</label><input v-model="form.password" type="password" /></div>
       <div>
-        <label>Rôle</label>
+        <label>{{ t('users.fRole') }}</label>
         <select v-model="form.role">
-          <option value="user">Utilisateur</option>
-          <option value="auditor">Auditeur</option>
-          <option value="admin">Administrateur</option>
+          <option value="user">{{ t('users.roleUser') }}</option>
+          <option value="auditor">{{ t('users.roleAuditor') }}</option>
+          <option value="admin">{{ t('users.roleAdmin') }}</option>
         </select>
       </div>
       <div v-if="form.role === 'auditor'" style="grid-column: 1 / -1">
-        <label>Adresses auditées (l'auditeur peut lire les mails de ces adresses — séparées par virgule, espace ou retour ligne)</label>
+        <label>{{ t('users.fAuditedEmails') }}</label>
         <textarea v-model="form.audited_emails" rows="2" placeholder="alice@corp.com, bob@corp.com"></textarea>
       </div>
     </div>
-    <div style="margin-top: 14px"><button @click="submit">Créer le compte</button></div>
+    <div style="margin-top: 14px"><button @click="submit">{{ t('users.create') }}</button></div>
     <p v-if="error" class="err">{{ error }}</p>
 
     <!-- Liste -->
     <table v-if="users.length">
       <thead>
-        <tr><th>Identifiant</th><th>E-mail</th><th>Nom</th><th>Rôle</th><th>Périmètre audité</th><th>Actif</th><th>Créé le</th><th></th></tr>
+        <tr><th>{{ t('users.thUsername') }}</th><th>{{ t('users.thEmail') }}</th><th>{{ t('users.thName') }}</th><th>{{ t('users.thRole') }}</th><th>{{ t('users.thScope') }}</th><th>{{ t('users.thActive') }}</th><th>{{ t('users.thCreated') }}</th><th></th></tr>
       </thead>
       <tbody>
         <tr v-for="u in users" :key="u.id">
@@ -277,7 +278,7 @@ onMounted(() => {
                 v-model="emailInput"
                 type="email"
                 class="inline-edit"
-                placeholder="adresse e-mail"
+                :placeholder="t('users.emailPlaceholder')"
                 @keyup.enter="saveEmail(u)"
                 @keyup.esc="cancelEditEmail"
               />
@@ -287,10 +288,10 @@ onMounted(() => {
             <span
               v-else-if="u.role !== 'admin'"
               class="editable"
-              title="Cliquer pour modifier l'adresse e-mail"
+              :title="t('users.emailEditTitle')"
               @click="startEditEmail(u)"
-            >{{ u.email || '— (ajouter)' }}</span>
-            <span v-else>{{ u.email || '—' }}</span>
+            >{{ u.email || t('users.emailAdd') }}</span>
+            <span v-else>{{ u.email || t('common.dash') }}</span>
           </td>
 
           <td>{{ u.display_name }}</td>
@@ -302,7 +303,7 @@ onMounted(() => {
               <input
                 v-model="scopeInput"
                 class="inline-edit scope-edit"
-                placeholder="adresses séparées par virgule"
+                :placeholder="t('users.scopePlaceholder')"
                 @keyup.enter="saveScope(u)"
                 @keyup.esc="cancelEditScope"
               />
@@ -312,20 +313,20 @@ onMounted(() => {
             <span
               v-else-if="u.role === 'auditor'"
               class="editable"
-              title="Cliquer pour modifier le périmètre audité"
+              :title="t('users.scopeEditTitle')"
               @click="startEditScope(u)"
-            >{{ (u.audited_emails || []).join(', ') || '— (définir)' }}</span>
-            <span v-else>—</span>
+            >{{ (u.audited_emails || []).join(', ') || t('users.scopeDefine') }}</span>
+            <span v-else>{{ t('common.dash') }}</span>
           </td>
 
-          <td>{{ u.is_active ? '✓' : '—' }}</td>
+          <td>{{ u.is_active ? '✓' : t('common.dash') }}</td>
           <td>{{ (u.created_at || '').slice(0, 10) }}</td>
           <td>
             <template v-if="editingId === u.id">
               <input
                 v-model="newPassword"
                 type="password"
-                placeholder="Nouveau mot de passe"
+                :placeholder="t('users.pwdPlaceholder')"
                 class="inline-edit"
                 @keyup.enter="savePassword(u)"
                 @keyup.esc="cancelEditPassword"
@@ -334,16 +335,16 @@ onMounted(() => {
               <button class="link" @click="cancelEditPassword">✕</button>
             </template>
             <template v-else>
-              <button class="link" @click="startEditPassword(u)">Mot de passe</button>
+              <button class="link" @click="startEditPassword(u)">{{ t('users.btnPassword') }}</button>
               <button v-if="u.role !== 'admin'" class="link sep" @click="openImapEditor(u)">
-                {{ u.restore_imap ? 'Restoration IMAP ✓' : 'Restoration IMAP' }}
+                {{ u.restore_imap ? t('users.btnImapRestoreSet') : t('users.btnImapRestore') }}
               </button>
-              <button v-if="u.role !== 'admin'" class="link sep" @click="doTransferSmtp(u)">Restoration SMTP</button>
+              <button v-if="u.role !== 'admin'" class="link sep" @click="doTransferSmtp(u)">{{ t('users.btnSmtpRestore') }}</button>
               <button v-if="!u.protected" class="link sep" @click="toggleActive(u)">
-                {{ u.is_active ? 'Désactiver' : 'Activer' }}
+                {{ u.is_active ? t('users.btnDeactivate') : t('users.btnActivate') }}
               </button>
-              <button v-if="!u.protected" class="link sep" @click="remove(u)">Supprimer</button>
-              <span v-if="u.protected" class="muted sep" title="Compte administrateur principal">protégé</span>
+              <button v-if="!u.protected" class="link sep" @click="remove(u)">{{ t('common.delete') }}</button>
+              <span v-if="u.protected" class="muted sep" :title="t('users.protectedTitle')">{{ t('users.protected') }}</span>
             </template>
           </td>
         </tr>
@@ -353,12 +354,12 @@ onMounted(() => {
 
   <section class="card" style="margin-top: 14px">
     <h2 style="display:flex; align-items:center; gap:10px">
-      Restaurations récentes
-      <button class="link" @click="refreshJobs">↻ Rafraîchir</button>
+      {{ t('users.jobsTitle') }}
+      <button class="link" @click="refreshJobs">{{ t('users.jobsRefresh') }}</button>
     </h2>
     <table v-if="jobs.length">
       <thead>
-        <tr><th>#</th><th>Auditeur</th><th>Destinataire</th><th>Progression</th><th>Statut</th><th>Terminé</th></tr>
+        <tr><th>#</th><th>{{ t('users.jobsThAuditor') }}</th><th>{{ t('users.jobsThRecipient') }}</th><th>{{ t('users.jobsThProgress') }}</th><th>{{ t('users.jobsThStatus') }}</th><th>{{ t('users.jobsThFinished') }}</th></tr>
       </thead>
       <tbody>
         <tr v-for="j in jobs" :key="j.id">
@@ -366,38 +367,38 @@ onMounted(() => {
           <td>{{ j.auditor }}</td>
           <td>{{ j.recipient }}</td>
           <td>{{ j.sent }} / {{ j.total }}</td>
-          <td>{{ j.status === 'running' ? 'en cours' : j.status === 'done' ? 'terminé' : 'erreur' }}{{ j.error ? ' : ' + j.error : '' }}</td>
-          <td>{{ (j.finished_at || '').slice(0, 16).replace('T', ' ') || '—' }}</td>
+          <td>{{ j.status === 'running' ? t('users.jobsRunning') : j.status === 'done' ? t('users.jobsDone') : t('users.jobsError') }}{{ j.error ? ' : ' + j.error : '' }}</td>
+          <td>{{ (j.finished_at || '').slice(0, 16).replace('T', ' ') || t('common.dash') }}</td>
         </tr>
       </tbody>
     </table>
-    <p v-else class="muted">Aucun transfert.</p>
+    <p v-else class="muted">{{ t('users.jobsEmpty') }}</p>
   </section>
 
   <!-- Configuration de la destination IMAP de restauration -->
   <div v-if="imapEditUser" class="overlay" @click.self="imapEditUser = null">
     <div class="modal card">
-      <h2>Destination IMAP de restauration — {{ imapEditUser.username }}</h2>
-      <p class="muted">Si renseignée, « Restorer » dépose les mails du périmètre directement dans cette boîte (IMAP APPEND, façon imapsync). Sinon, repli sur le relais SMTP vers l'adresse du compte.</p>
+      <h2>{{ t('users.imapModalTitle', { name: imapEditUser.username }) }}</h2>
+      <p class="muted">{{ t('users.imapModalIntro') }}</p>
       <div class="filters">
-        <div><label>Serveur IMAP</label><input v-model="imapForm.host" placeholder="imap.example.com" /></div>
-        <div><label>Port</label><input v-model="imapForm.port" type="number" /></div>
-        <div><label>Identifiant</label><input v-model="imapForm.username" /></div>
+        <div><label>{{ t('users.imapServer') }}</label><input v-model="imapForm.host" placeholder="imap.example.com" /></div>
+        <div><label>{{ t('common.port') }}</label><input v-model="imapForm.port" type="number" /></div>
+        <div><label>{{ t('common.username') }}</label><input v-model="imapForm.username" /></div>
         <div>
-          <label>Mot de passe {{ (imapEditUser.restore_imap && imapEditUser.restore_imap.password_set) ? '(défini — vide = conserver)' : '' }}</label>
+          <label>{{ t('common.password') }} {{ (imapEditUser.restore_imap && imapEditUser.restore_imap.password_set) ? t('users.imapPasswordSet') : '' }}</label>
           <input v-model="imapForm.password" type="password" />
         </div>
-        <div><label>Dossier</label><input v-model="imapForm.folder" placeholder="INBOX" /></div>
+        <div><label>{{ t('common.folder') }}</label><input v-model="imapForm.folder" placeholder="INBOX" /></div>
         <div>
-          <label>Options</label>
-          <label class="opt"><input type="checkbox" v-model="imapForm.ssl" /> SSL/TLS</label>
+          <label>{{ t('common.options') }}</label>
+          <label class="opt"><input type="checkbox" v-model="imapForm.ssl" /> {{ t('common.ssltls') }}</label>
         </div>
       </div>
       <div style="margin-top: 14px; display:flex; gap:10px; flex-wrap:wrap">
-        <button @click="restoreViaImap">Restorer maintenant (IMAP)</button>
-        <button class="ghost" @click="saveImap">Enregistrer la destination</button>
-        <button v-if="imapEditUser.restore_imap" class="ghost" @click="clearImap">Supprimer</button>
-        <button class="ghost" @click="imapEditUser = null">Annuler</button>
+        <button @click="restoreViaImap">{{ t('users.imapRestoreNow') }}</button>
+        <button class="ghost" @click="saveImap">{{ t('users.imapSaveDest') }}</button>
+        <button v-if="imapEditUser.restore_imap" class="ghost" @click="clearImap">{{ t('common.delete') }}</button>
+        <button class="ghost" @click="imapEditUser = null">{{ t('common.cancel') }}</button>
       </div>
       <p v-if="error" class="err">{{ error }}</p>
     </div>

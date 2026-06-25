@@ -1,6 +1,8 @@
 // Client API. Les URL sont relatives : Nginx (prod) ou le proxy Vite (dev)
 // redirigent vers le service `api`, donc aucune configuration CORS côté client.
 
+import { t } from './i18n.js'
+
 const TOKEN_KEY = 'ma_token'
 const USER_KEY = 'ma_user'
 const ADMIN_KEY = 'ma_admin'
@@ -43,7 +45,7 @@ export async function login(username, password) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Échec de connexion')
+    throw new Error(data.detail || t('errors.login'))
   }
   return res.json()
 }
@@ -58,7 +60,7 @@ export async function searchAdvanced(filters, searchAfter = null, size = 50) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors de la recherche')
+    throw new Error(data.detail || t('errors.search'))
   }
   const data = await res.json()
   return {
@@ -73,14 +75,14 @@ export async function getMessage(id) {
   const res = await authFetch('/messages/' + id)
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors de la consultation')
+    throw new Error(data.detail || t('errors.message'))
   }
   return res.json()
 }
 
 export async function fetchEml(id) {
   const res = await authFetch('/messages/' + id + '/eml')
-  if (!res.ok) throw new Error('Erreur lors de l’export')
+  if (!res.ok) throw new Error(t('errors.export'))
   const integrity = res.headers.get('X-Archive-Integrity')
   const blob = await res.blob()
   return { blob, integrity }
@@ -101,7 +103,7 @@ export async function createUser(payload) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors de la création')
+    throw new Error(data.detail || t('errors.create'))
   }
   return res.json()
 }
@@ -114,12 +116,12 @@ export async function getDlq() {
 }
 export async function replayDlq() {
   const res = await authFetch('/dlq/replay', { method: 'POST' })
-  if (!res.ok) throw new Error('Erreur lors du rejeu')
+  if (!res.ok) throw new Error(t('errors.replay'))
   return res.json()
 }
 export async function purgeDlq() {
   const res = await authFetch('/dlq/purge', { method: 'POST' })
-  if (!res.ok) throw new Error('Erreur lors de la purge')
+  if (!res.ok) throw new Error(t('errors.purge'))
   return res.json()
 }
 
@@ -151,7 +153,7 @@ export async function updateAppSettings(payload) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors de l’enregistrement')
+    throw new Error(data.detail || t('errors.saveSettings'))
   }
   return res.json()
 }
@@ -171,14 +173,14 @@ export async function createFetchSource(payload) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors de la création')
+    throw new Error(data.detail || t('errors.create'))
   }
   return res.json()
 }
 
 export async function deleteFetchSource(id) {
   const res = await authFetch('/fetch-sources/' + id, { method: 'DELETE' })
-  if (!res.ok) throw new Error('Erreur lors de la suppression')
+  if (!res.ok) throw new Error(t('errors.deleteSource'))
   return res.json()
 }
 
@@ -186,7 +188,7 @@ export async function runFetchSource(id) {
   const res = await authFetch('/fetch-sources/' + id + '/run', { method: 'POST' })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Échec de la collecte')
+    throw new Error(data.detail || t('errors.runSource'))
   }
   return res.json()
 }
@@ -199,7 +201,7 @@ export async function changeOwnPassword(oldPassword, newPassword) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors du changement de mot de passe')
+    throw new Error(data.detail || t('errors.changePassword'))
   }
   return res.json()
 }
@@ -212,7 +214,7 @@ export async function changePassword(id, password) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors du changement de mot de passe')
+    throw new Error(data.detail || t('errors.changePassword'))
   }
   return res.json()
 }
@@ -221,7 +223,7 @@ export async function transferPerimeter(id, restoreMethod = 'auto') {
   const res = await authFetch('/users/' + id + '/transfer-perimeter?method=' + restoreMethod, { method: 'POST' })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Échec du transfert')
+    throw new Error(data.detail || t('errors.transfer'))
   }
   return res.json()
 }
@@ -239,7 +241,7 @@ export async function setUserEmail(id, email) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors de la modification de l’e-mail')
+    throw new Error(data.detail || t('errors.setEmail'))
   }
   return res.json()
 }
@@ -252,7 +254,7 @@ export async function setRestoreImap(id, payload) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors de la configuration IMAP')
+    throw new Error(data.detail || t('errors.configImap'))
   }
   return res.json()
 }
@@ -265,7 +267,7 @@ export async function setAuditedEmails(id, emails) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors de la modification du périmètre')
+    throw new Error(data.detail || t('errors.setScope'))
   }
   return res.json()
 }
@@ -278,7 +280,7 @@ export async function setUserActive(id, isActive) {
   })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors du changement de statut')
+    throw new Error(data.detail || t('errors.setStatus'))
   }
   return res.json()
 }
@@ -287,7 +289,7 @@ export async function deleteUser(id) {
   const res = await authFetch('/users/' + id, { method: 'DELETE' })
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'Erreur lors de la suppression')
+    throw new Error(data.detail || t('errors.deleteUser'))
   }
   return res.json()
 }
@@ -298,7 +300,7 @@ export async function setLegalHold(id, hold) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ hold }),
   })
-  if (!res.ok) throw new Error('Erreur conservation légale')
+  if (!res.ok) throw new Error(t('errors.legalHold'))
   return res.json()
 }
 
@@ -308,6 +310,6 @@ export async function forwardMessage(id, recipients) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message_id: id, recipients }),
   })
-  if (!res.ok) throw new Error('Erreur lors du transfert')
+  if (!res.ok) throw new Error(t('errors.forward'))
   return res.json()
 }
