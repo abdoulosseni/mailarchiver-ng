@@ -1,0 +1,25 @@
+# Routage des alertes. Remplacer le receiver par votre canal réel
+# (e-mail, Slack, PagerDuty, Opsgenie…).
+route:
+  receiver: 'ops-email'
+  group_by: ['alertname']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: 'ops-email'
+      repeat_interval: 1h
+
+receivers:
+  - name: 'ops-email'
+    email_configs:
+      - to: 'ops@example.com'
+        from: 'alertmanager@example.com'
+        smarthost: 'smtp.example.com:587'
+        auth_username: 'alertmanager@example.com'
+        auth_password: 'CHANGE_ME'
+        send_resolved: true
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/XXX'
+    #     channel: '#alerts'

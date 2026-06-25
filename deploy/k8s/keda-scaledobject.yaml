@@ -1,0 +1,49 @@
+# Autoscaling piloté par la profondeur de la file RabbitMQ `raw_mail`.
+# Prérequis : KEDA installé dans le cluster (https://keda.sh).
+#
+# Logique : KEDA maintient ~ (backlog / queueLength) réplicas, borné par
+# minReplicaCount..maxReplicaCount. Ici 1 worker visé pour 500 mails en attente,
+# jusqu'à 50 workers. Scale-to-min en l'absence de backlog.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keda-rabbitmq
+  namespace: mailarchiver
+type: Opaque
+stringData:
+  # amqp://user:pass@rabbitmq.mailarchiver.svc:5672/
+  host: "amqp://CHANGE_ME@rabbitmq.mailarchiver.svc:5672/"
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: rabbitmq-auth
+  namespace: mailarchiver
+spec:
+  secretTargetRef:
+    - parameter: host
+      name: keda-rabbitmq
+      key: host
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: archiver-worker-scaler
+  namespace: mailarchiver
+spec:
+  scaleTargetRef:
+    name: archiver-worker
+  minReplicaCount: 2
+  maxReplicaCount: 50
+  cooldownPeriod: 120
+  pollingInterval: 15
+  triggers:
+    - type: rabbitmq
+      metadata:
+        protocol: amqp
+        queueName: raw_mail
+        mode: QueueLength
+        value: "500" # mails en attente par réplica visé
+      authenticationRef:
+        name: rabbitmq-auth

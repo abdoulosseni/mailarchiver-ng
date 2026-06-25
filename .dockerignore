@@ -1,0 +1,19 @@
+# Données de volumes (bind mounts locaux) — ne jamais embarquer dans le contexte
+data/
+spool/
+
+# Secrets — montés au runtime, jamais copiés dans une image
+secrets/
+
+# Python
+.venv/
+**/__pycache__/
+*.egg-info/
+
+# Node
+**/node_modules/
+**/dist/
+
+# Divers
+.git/
+.env

@@ -1,0 +1,293 @@
+# =============================================================================
+# Déploiement HAUTE DISPONIBILITÉ multi-hôtes — Docker Swarm
+# =============================================================================
+# Topologie de RÉFÉRENCE (non exécutée sur un hôte unique). À déployer sur un
+# cluster Swarm ≥3 nœuds étiquetés. Adapter secrets, certificats, tailles, et le
+# registre d'images. Alternative recommandée à grande échelle : Kubernetes
+# (cf. deploy/k8s/ + opérateurs CloudNativePG / RabbitMQ / MinIO).
+#
+#   Préparer :   docker swarm init ; docker node update --label-add role=db <node> …
+#   Construire : docker compose build ; docker compose push   (vers ${REGISTRY})
+#   Déployer :   docker stack deploy -c docker-compose.ha.yml mailarchiver
+#
+# Datastores : PostgreSQL repmgr (primaire + standby + bascule auto, via pgpool),
+# RabbitMQ cluster 3 nœuds (quorum queues), MinIO distribué 4 nœuds (erasure
+# coding), OpenSearch 3 nœuds. Applicatif : N réplicas derrière l'ingress TLS.
+# =============================================================================
+version: "3.8"
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+asyncpg://mailarchiver:${DB_PASSWORD}@pgpool:5432/mailarchiver
+  AMQP_URL: amqp://mailarchiver:${MQ_PASSWORD}@rabbitmq-0:5672/
+  RAW_MAIL_QUEUE: raw_mail
+  S3_ENDPOINT: http://minio-0:9000
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_SECRET_KEY}
+  S3_BUCKET: archives
+  S3_REGION: us-east-1
+  S3_OBJECT_LOCK_DAYS: "365"
+  S3_OBJECT_LOCK_MODE: COMPLIANCE
+  OPENSEARCH_URL: http://opensearch-0:9200
+  OPENSEARCH_INDEX: messages
+  OPENSEARCH_SHARDS: "3"
+  OPENSEARCH_REPLICAS: "1"
+  MASTER_KEY_FILE: /secrets/master.key
+  SIGNING_PRIVATE_KEY_FILE: /secrets/signing_private.pem
+  SIGNING_PUBLIC_KEY_FILE: /secrets/signing_public.pem
+  LOG_JSON: "true"
+
+networks:
+  ma: { driver: overlay, attachable: true }
+
+volumes:
+  pg0: {}
+  pg1: {}
+  mq0: {}
+  mq1: {}
+  mq2: {}
+  minio0: {}
+  minio1: {}
+  minio2: {}
+  minio3: {}
+  os0: {}
+  os1: {}
+  os2: {}
+
+services:
+  # ── PostgreSQL HA : repmgr (primaire + standby, bascule auto) + pgpool ──────
+  pg-0:
+    image: bitnami/postgresql-repmgr:16
+    environment:
+      POSTGRESQL_USERNAME: mailarchiver
+      POSTGRESQL_PASSWORD: ${DB_PASSWORD}
+      POSTGRESQL_DATABASE: mailarchiver
+      REPMGR_PASSWORD: ${REPMGR_PASSWORD}
+      REPMGR_PRIMARY_HOST: pg-0
+      REPMGR_PARTNER_NODES: pg-0,pg-1
+      REPMGR_NODE_NAME: pg-0
+      REPMGR_NODE_NETWORK_NAME: pg-0
+    volumes: [pg0:/bitnami/postgresql]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == db] } }
+
+  pg-1:
+    image: bitnami/postgresql-repmgr:16
+    environment:
+      POSTGRESQL_USERNAME: mailarchiver
+      POSTGRESQL_PASSWORD: ${DB_PASSWORD}
+      POSTGRESQL_DATABASE: mailarchiver
+      REPMGR_PASSWORD: ${REPMGR_PASSWORD}
+      REPMGR_PRIMARY_HOST: pg-0
+      REPMGR_PARTNER_NODES: pg-0,pg-1
+      REPMGR_NODE_NAME: pg-1
+      REPMGR_NODE_NETWORK_NAME: pg-1
+    volumes: [pg1:/bitnami/postgresql]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == db] } }
+
+  pgpool:
+    image: bitnami/pgpool:4
+    environment:
+      PGPOOL_BACKEND_NODES: 0:pg-0:5432,1:pg-1:5432
+      PGPOOL_SR_CHECK_USER: mailarchiver
+      PGPOOL_SR_CHECK_PASSWORD: ${DB_PASSWORD}
+      PGPOOL_POSTGRES_USERNAME: mailarchiver
+      PGPOOL_POSTGRES_PASSWORD: ${DB_PASSWORD}
+      PGPOOL_ADMIN_USERNAME: admin
+      PGPOOL_ADMIN_PASSWORD: ${DB_PASSWORD}
+      PGPOOL_ENABLE_LOAD_BALANCING: "no"  # tout vers le primaire (cohérence)
+    networks: [ma]
+    depends_on: [pg-0, pg-1]
+    deploy: { replicas: 1 }
+
+  # ── RabbitMQ : cluster 3 nœuds (quorum queues côté app) ─────────────────────
+  rabbitmq-0:
+    image: bitnami/rabbitmq:3.13
+    hostname: rabbitmq-0
+    environment:
+      RABBITMQ_NODE_NAME: rabbit@rabbitmq-0
+      RABBITMQ_NODE_TYPE: stats
+      RABBITMQ_ERL_COOKIE: ${MQ_COOKIE}
+      RABBITMQ_USERNAME: mailarchiver
+      RABBITMQ_PASSWORD: ${MQ_PASSWORD}
+    volumes: [mq0:/bitnami/rabbitmq/mnesia]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == mq] } }
+
+  rabbitmq-1:
+    image: bitnami/rabbitmq:3.13
+    hostname: rabbitmq-1
+    environment:
+      RABBITMQ_NODE_NAME: rabbit@rabbitmq-1
+      RABBITMQ_NODE_TYPE: queue-disc
+      RABBITMQ_CLUSTER_NODE_NAME: rabbit@rabbitmq-0
+      RABBITMQ_ERL_COOKIE: ${MQ_COOKIE}
+      RABBITMQ_USERNAME: mailarchiver
+      RABBITMQ_PASSWORD: ${MQ_PASSWORD}
+    volumes: [mq1:/bitnami/rabbitmq/mnesia]
+    networks: [ma]
+    depends_on: [rabbitmq-0]
+    deploy: { placement: { constraints: [node.labels.role == mq] } }
+
+  rabbitmq-2:
+    image: bitnami/rabbitmq:3.13
+    hostname: rabbitmq-2
+    environment:
+      RABBITMQ_NODE_NAME: rabbit@rabbitmq-2
+      RABBITMQ_NODE_TYPE: queue-disc
+      RABBITMQ_CLUSTER_NODE_NAME: rabbit@rabbitmq-0
+      RABBITMQ_ERL_COOKIE: ${MQ_COOKIE}
+      RABBITMQ_USERNAME: mailarchiver
+      RABBITMQ_PASSWORD: ${MQ_PASSWORD}
+    volumes: [mq2:/bitnami/rabbitmq/mnesia]
+    networks: [ma]
+    depends_on: [rabbitmq-0]
+    deploy: { placement: { constraints: [node.labels.role == mq] } }
+
+  # ── MinIO : mode distribué 4 nœuds (erasure coding, tolérance aux pannes) ────
+  # Les 4 nœuds partagent la MÊME commande (expansion http://minio-{0...3}).
+  minio-0:
+    image: minio/minio:latest
+    command: server http://minio-{0...3}/data --console-address ":9001"
+    environment: { MINIO_ROOT_USER: "${S3_ACCESS_KEY}", MINIO_ROOT_PASSWORD: "${S3_SECRET_KEY}" }
+    volumes: [minio0:/data]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == s3] } }
+  minio-1:
+    image: minio/minio:latest
+    command: server http://minio-{0...3}/data --console-address ":9001"
+    environment: { MINIO_ROOT_USER: "${S3_ACCESS_KEY}", MINIO_ROOT_PASSWORD: "${S3_SECRET_KEY}" }
+    volumes: [minio1:/data]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == s3] } }
+  minio-2:
+    image: minio/minio:latest
+    command: server http://minio-{0...3}/data --console-address ":9001"
+    environment: { MINIO_ROOT_USER: "${S3_ACCESS_KEY}", MINIO_ROOT_PASSWORD: "${S3_SECRET_KEY}" }
+    volumes: [minio2:/data]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == s3] } }
+  minio-3:
+    image: minio/minio:latest
+    command: server http://minio-{0...3}/data --console-address ":9001"
+    environment: { MINIO_ROOT_USER: "${S3_ACCESS_KEY}", MINIO_ROOT_PASSWORD: "${S3_SECRET_KEY}" }
+    volumes: [minio3:/data]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == s3] } }
+
+  # ── OpenSearch : cluster 3 nœuds (quorum de cluster-manager) ────────────────
+  # ⚠️ DISABLE_SECURITY_PLUGIN=false → fournir certs + auth (omis ici par concision).
+  opensearch-0:
+    image: opensearchproject/opensearch:2.15.0
+    environment:
+      cluster.name: mailarchiver
+      node.name: opensearch-0
+      discovery.seed_hosts: opensearch-0,opensearch-1,opensearch-2
+      cluster.initial_cluster_manager_nodes: opensearch-0,opensearch-1,opensearch-2
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms2g -Xmx2g
+    ulimits: { memlock: { soft: -1, hard: -1 } }
+    volumes: [os0:/usr/share/opensearch/data]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == search] } }
+  opensearch-1:
+    image: opensearchproject/opensearch:2.15.0
+    environment:
+      cluster.name: mailarchiver
+      node.name: opensearch-1
+      discovery.seed_hosts: opensearch-0,opensearch-1,opensearch-2
+      cluster.initial_cluster_manager_nodes: opensearch-0,opensearch-1,opensearch-2
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms2g -Xmx2g
+    ulimits: { memlock: { soft: -1, hard: -1 } }
+    volumes: [os1:/usr/share/opensearch/data]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == search] } }
+  opensearch-2:
+    image: opensearchproject/opensearch:2.15.0
+    environment:
+      cluster.name: mailarchiver
+      node.name: opensearch-2
+      discovery.seed_hosts: opensearch-0,opensearch-1,opensearch-2
+      cluster.initial_cluster_manager_nodes: opensearch-0,opensearch-1,opensearch-2
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms2g -Xmx2g
+    ulimits: { memlock: { soft: -1, hard: -1 } }
+    volumes: [os2:/usr/share/opensearch/data]
+    networks: [ma]
+    deploy: { placement: { constraints: [node.labels.role == search] } }
+
+  # ── Applicatif (sans état) : N réplicas ─────────────────────────────────────
+  smtp-gateway:
+    image: ${REGISTRY}/mailarchiver-ng-smtp-gateway:${TAG:-latest}
+    environment:
+      <<: *app-env
+      SMTP_HOST: 0.0.0.0
+      SMTP_PORT: "2525"
+      SMTP_REQUIRE_STARTTLS: "true"
+      SMTP_TLS_CERT: /secrets/smtp_cert.pem
+      SMTP_TLS_KEY: /secrets/smtp_key.pem
+    secrets: [master.key, signing_private.pem, signing_public.pem, smtp_cert.pem, smtp_key.pem]
+    networks: [ma]
+    ports: ["25:2525"]
+    deploy: { replicas: 2 }
+
+  archiver-worker:
+    image: ${REGISTRY}/mailarchiver-ng-archiver-worker:${TAG:-latest}
+    environment: { <<: *app-env }
+    secrets: [master.key, signing_private.pem, signing_public.pem]
+    networks: [ma]
+    deploy:
+      replicas: 4            # scalé selon le backlog (cf. deploy/k8s/keda-*)
+      restart_policy: { condition: any }
+
+  fetch-worker:
+    image: ${REGISTRY}/mailarchiver-ng-fetch-worker:${TAG:-latest}
+    environment: { <<: *app-env }
+    secrets: [master.key, signing_private.pem, signing_public.pem]
+    networks: [ma]
+    deploy: { replicas: 1 }
+
+  retention-worker:
+    image: ${REGISTRY}/mailarchiver-ng-retention-worker:${TAG:-latest}
+    environment:
+      <<: *app-env
+      DEFAULT_RETENTION_DAYS: "365"
+      RETENTION_SCAN_CRON: "0 2 * * *"
+    secrets: [master.key, signing_private.pem, signing_public.pem]
+    networks: [ma]
+    deploy: { replicas: 1 }   # singleton (purge planifiée)
+
+  api:
+    image: ${REGISTRY}/mailarchiver-ng-api:${TAG:-latest}
+    environment:
+      <<: *app-env
+      API_SECRET_KEY: ${API_SECRET_KEY}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    secrets: [master.key, signing_private.pem, signing_public.pem]
+    networks: [ma]
+    deploy: { replicas: 3 }
+
+  web:
+    image: ${REGISTRY}/mailarchiver-ng-web:${TAG:-latest}
+    # Ingress TLS avec redirection HTTP→HTTPS forcée.
+    configs:
+      - { source: nginx_prod, target: /etc/nginx/conf.d/default.conf }
+    secrets: [smtp_cert.pem, smtp_key.pem]
+    networks: [ma]
+    ports: ["80:80", "443:443"]
+    deploy: { replicas: 2 }
+
+# Secrets/Configs Swarm — créés hors de ce fichier :
+#   docker secret create master.key secrets/master.key   (idem pour les autres)
+#   docker config create nginx_prod services/web/nginx.prod.conf
+secrets:
+  master.key: { external: true }
+  signing_private.pem: { external: true }
+  signing_public.pem: { external: true }
+  smtp_cert.pem: { external: true }
+  smtp_key.pem: { external: true }
+
+configs:
+  nginx_prod: { external: true }

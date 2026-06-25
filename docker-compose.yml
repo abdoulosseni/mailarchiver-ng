@@ -1,0 +1,218 @@
+name: mailarchiver-ng
+
+x-common-env: &common-env
+  DATABASE_URL: ${DATABASE_URL}
+  AMQP_URL: ${AMQP_URL}
+  RAW_MAIL_QUEUE: ${RAW_MAIL_QUEUE}
+  S3_ENDPOINT: ${S3_ENDPOINT}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+  S3_SECRET_KEY: ${S3_SECRET_KEY}
+  S3_BUCKET: ${S3_BUCKET}
+  S3_REGION: ${S3_REGION}
+  S3_OBJECT_LOCK_DAYS: ${S3_OBJECT_LOCK_DAYS:-0}
+  S3_OBJECT_LOCK_MODE: ${S3_OBJECT_LOCK_MODE:-GOVERNANCE}
+  OPENSEARCH_URL: ${OPENSEARCH_URL}
+  OPENSEARCH_INDEX: ${OPENSEARCH_INDEX}
+  OPENSEARCH_SHARDS: ${OPENSEARCH_SHARDS}
+  OPENSEARCH_REPLICAS: ${OPENSEARCH_REPLICAS}
+  MASTER_KEY_FILE: ${MASTER_KEY_FILE}
+  SIGNING_PRIVATE_KEY_FILE: ${SIGNING_PRIVATE_KEY_FILE}
+  SIGNING_PUBLIC_KEY_FILE: ${SIGNING_PUBLIC_KEY_FILE}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_JSON: ${LOG_JSON:-false}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "15672:15672"
+    healthcheck:
+      # `ping` répond avant que le listener AMQP (5672) accepte réellement :
+      # on vérifie la connectivité du port pour éviter une course au démarrage.
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+
+  # Cluster OpenSearch. Nombre de nœuds paramétrable : ajouter un service
+  # opensearch-nodeN (copier node2) et l'ajouter à discovery.seed_hosts.
+  # Heap par nœud via ${OPENSEARCH_HEAP} (.env).
+  opensearch-node1:
+    image: opensearchproject/opensearch:2.15.0
+    restart: unless-stopped
+    environment:
+      - cluster.name=mailarchiver
+      - node.name=opensearch-node1
+      - discovery.seed_hosts=opensearch-node1,opensearch-node2
+      - cluster.initial_cluster_manager_nodes=opensearch-node1,opensearch-node2
+      - bootstrap.memory_lock=true
+      - DISABLE_SECURITY_PLUGIN=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms${OPENSEARCH_HEAP} -Xmx${OPENSEARCH_HEAP}"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+    volumes:
+      - osdata1:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 40s
+
+  opensearch-node2:
+    image: opensearchproject/opensearch:2.15.0
+    restart: unless-stopped
+    environment:
+      - cluster.name=mailarchiver
+      - node.name=opensearch-node2
+      - discovery.seed_hosts=opensearch-node1,opensearch-node2
+      - cluster.initial_cluster_manager_nodes=opensearch-node1,opensearch-node2
+      - bootstrap.memory_lock=true
+      - DISABLE_SECURITY_PLUGIN=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms${OPENSEARCH_HEAP} -Xmx${OPENSEARCH_HEAP}"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+    volumes:
+      - osdata2:/usr/share/opensearch/data
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  smtp-gateway:
+    build: { context: ., dockerfile: services/smtp-gateway/Dockerfile }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_TLS_CERT: ${SMTP_TLS_CERT}
+      SMTP_TLS_KEY: ${SMTP_TLS_KEY}
+      SMTP_REQUIRE_STARTTLS: ${SMTP_REQUIRE_STARTTLS}
+      SMTP_MAX_MESSAGE_BYTES: ${SMTP_MAX_MESSAGE_BYTES}
+    volumes:
+      - ./secrets:/secrets:ro
+    ports:
+      - "2525:2525"
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  archiver-worker:
+    build: { context: ., dockerfile: services/archiver-worker/Dockerfile }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    volumes:
+      - ./secrets:/secrets:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      opensearch-node1: { condition: service_healthy }
+    deploy:
+      # 8 workers ≈ 200 msg/s en traitement sur une machine de dev mono-hôte
+      # (au-delà, la contention CPU avec PG/OpenSearch/MinIO dégrade le débit).
+      # En production (infra dédiée), augmenter pour scaler horizontalement.
+      replicas: 8
+
+  api:
+    build: { context: ., dockerfile: services/api/Dockerfile }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      API_HOST: ${API_HOST}
+      API_PORT: ${API_PORT}
+      API_SECRET_KEY: ${API_SECRET_KEY}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
+      LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE}
+      SUPPORTED_LOCALES: ${SUPPORTED_LOCALES}
+      LDAP_ENABLED: ${LDAP_ENABLED}
+      LDAP_SERVER: ${LDAP_SERVER}
+      LDAP_BASE_DN: ${LDAP_BASE_DN}
+      LDAP_USER_DN_TEMPLATE: ${LDAP_USER_DN_TEMPLATE}
+      LDAP_ADMIN_GROUP: ${LDAP_ADMIN_GROUP}
+    volumes:
+      - ./secrets:/secrets:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      opensearch-node1: { condition: service_healthy }
+
+  web:
+    build: { context: ., dockerfile: services/web/Dockerfile }
+    restart: unless-stopped
+    volumes:
+      - ./secrets:/secrets:ro  # certificat TLS de l'ingress (auto-signé)
+    ports:
+      - "8080:80"
+      - "8443:443"
+    depends_on:
+      - api
+
+  retention-worker:
+    build: { context: ., dockerfile: services/retention-worker/Dockerfile }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DEFAULT_RETENTION_DAYS: ${DEFAULT_RETENTION_DAYS}
+      RETENTION_SCAN_CRON: ${RETENTION_SCAN_CRON}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  fetch-worker:
+    build: { context: ., dockerfile: services/fetch-worker/Dockerfile }
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    volumes:
+      - ./secrets:/secrets:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  osdata1:
+  osdata2:
+  miniodata:

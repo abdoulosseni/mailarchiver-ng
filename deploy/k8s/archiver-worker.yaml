@@ -1,0 +1,28 @@
+# Déploiement du worker d'archivage (scalé automatiquement par KEDA, voir
+# keda-scaledobject.yaml). Le worker est stateless → scale horizontal trivial.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: archiver-worker
+  namespace: mailarchiver
+spec:
+  replicas: 2 # min ; KEDA ajuste entre minReplicaCount et maxReplicaCount
+  selector:
+    matchLabels: { app: archiver-worker }
+  template:
+    metadata:
+      labels: { app: archiver-worker }
+    spec:
+      containers:
+        - name: archiver-worker
+          image: registry.example.com/mailarchiver-ng-archiver-worker:latest
+          envFrom:
+            - secretRef: { name: mailarchiver-env } # DATABASE_URL, AMQP_URL, S3_*, OPENSEARCH_*…
+          volumeMounts:
+            - { name: secrets, mountPath: /secrets, readOnly: true }
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "1Gi" }
+      volumes:
+        - name: secrets
+          secret: { secretName: mailarchiver-keys } # clé maître, signature

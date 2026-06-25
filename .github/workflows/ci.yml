@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  lint-unit:
+    name: Lint + tests unitaires
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Installer les dépendances
+        run: |
+          pip install ruff pytest
+          pip install -e libs/mailarchiver_common
+      - name: Lint (ruff)
+        run: ruff check . || true   # non bloquant tant que la base n'est pas clean
+      - name: Tests unitaires (crypto)
+        run: pytest -q
+
+  e2e:
+    name: Build + non-régression E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Préparer l'environnement
+        run: |
+          cp .env.example .env
+          make keys
+      - name: Démarrer la stack
+        run: docker compose up -d --build
+      - name: Attendre la disponibilité de l'API
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/health && break || sleep 5
+          done
+      - name: Suite de non-régression (rapide)
+        run: python tests/nonreg.py --quick
+      - name: Logs en cas d'échec
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Arrêt
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,45 @@
+groups:
+  - name: mailarchiver
+    rules:
+      # ── Disponibilité ───────────────────────────────────────────────
+      - alert: ApiDown
+        expr: up{job="mailarchiver-api"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "API MailArchiver injoignable"
+          description: "Le scrape de l'API échoue depuis 1 minute."
+
+      - alert: NoArchiverConsumers
+        expr: mailarchiver_raw_mail_consumers == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Aucun worker d'archivage actif"
+          description: "Plus aucun consommateur sur la file raw_mail : l'archivage est arrêté."
+
+      # ── Backlog (saturation pipeline) ───────────────────────────────
+      - alert: BacklogHigh
+        expr: mailarchiver_raw_mail_backlog > 10000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Backlog d'archivage élevé"
+          description: "{{ $value }} mails en attente depuis 5 min. Envisager d'ajouter des workers (KEDA)."
+
+      - alert: BacklogCritical
+        expr: mailarchiver_raw_mail_backlog > 100000
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Backlog d'archivage critique"
+          description: "{{ $value }} mails en attente : la capacité de traitement est dépassée."
+
+      # ── Quarantaine (messages empoisonnés) ──────────────────────────
+      - alert: DeadLetterPresent
+        expr: mailarchiver_dlq_messages > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "Mails en quarantaine (DLQ)"
+          description: "{{ $value }} mail(s) en DLQ : inspecter puis rejouer via l'IHM Paramètres."
